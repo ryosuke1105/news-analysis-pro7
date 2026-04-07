@@ -87,8 +87,8 @@ if check_password():
         st.write("") 
         st.link_button("📋 開発へのフィードバックを送る", feedback_url, use_container_width=True)
 
-        # --- 【追加】カレンダーが綺麗に開くように、サイドバーの下部に余白を作る ---
-        st.markdown("<br><br><br><br><br><br><br><br>", unsafe_allow_html=True)
+        # --- 【修正】どんな環境でも確実に余白を作るための透明な箱を配置 ---
+        st.markdown('<div style="height: 350px;"></div>', unsafe_allow_html=True)
 
     st.title("📰 News Intelligence Dashboard")
     st.caption(f"対象: **{keyword}** | 期間: {date_range[0]} 〜 {date_range[1]}")
@@ -99,7 +99,6 @@ if check_password():
             with st.status("🔍 データを収集中...", expanded=True) as status:
                 st.write("Google News RSSから情報を抽出中...")
                 
-                # --- 【修正】複数単語検索への対応 ---
                 # 全角・半角スペースを「+」に変換してGoogle Newsの検索クエリを作る
                 search_query = keyword.replace("　", " ").replace(" ", "+")
                 exclude_domain = "city.kitakyushu.lg.jp"
@@ -113,8 +112,7 @@ if check_password():
                 articles = []
                 all_text_for_analysis = ""
 
-                # --- 【修正】判定ロジックの強化 ---
-                # 入力されたキーワードを個別の単語に分ける（例：「北九州 ニュース」→「北九州」と「ニュース」）
+                # 入力されたキーワードを個別の単語に分ける
                 target_words = keyword.replace("　", " ").split()
 
                 for entry in feed.entries[:max_results]:
@@ -126,7 +124,7 @@ if check_password():
                             dt = datetime.datetime(*entry.published_parsed[:6])
                             entry_date = dt.date()
                             
-                            # --- 【重要ポイント】ここで期間内かどうかの最終チェックを行います ---
+                            # 指定期間内かどうかの最終チェック
                             if start_date <= entry_date <= end_date:
                                 summary = entry.summary if hasattr(entry, 'summary') else ""
                                 clean_summary = re.sub(r'<[^>]+>', '', summary)
@@ -145,7 +143,7 @@ if check_password():
                 df = pd.DataFrame(articles).sort_values("日付", ascending=False)
                 df.insert(0, 'No', range(1, len(df) + 1))
                 
-                # ストップワード（変更禁止の指示通り、そのまま保持しています）
+                # ストップワード
                 stop_words = [
                     "の", "に", "は", "た", "を", "で", "と", "が", "も", "な", "し", "て", "した", "ある", "いう", "から", "など", "ニュース", "記事",
                     "yahoo", "ヤフー", "西日本新聞", "me", "ポータル", "web", "配信", "発表", "掲載", "提供", "公式", "サイト",
