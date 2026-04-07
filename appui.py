@@ -117,23 +117,32 @@ if check_password():
                 for entry in feed.entries[:max_results]:
                     # タイトルに検索した単語が「すべて」含まれているかチェック
                     if all(word.lower() in entry.title.lower() for word in target_words):
-                        summary = entry.summary if hasattr(entry, 'summary') else ""
-                        clean_summary = re.sub(r'<[^>]+>', '', summary)
-                        all_text_for_analysis += entry.title + " " + clean_summary + " "
-                        dt = datetime.datetime(*entry.published_parsed[:6])
-                        articles.append({
-                            "日付": dt.date(),
-                            "メディア": entry.source.title if hasattr(entry, 'source') else "不明",
-                            "タイトル": entry.title,
-                            "リンク": entry.link
-                        })
+                        
+                        # 日付情報を安全に取得
+                        if hasattr(entry, 'published_parsed') and entry.published_parsed:
+                            dt = datetime.datetime(*entry.published_parsed[:6])
+                            entry_date = dt.date()
+                            
+                            # --- 【重要ポイント】ここで期間内かどうかの最終チェックを行います ---
+                            if start_date <= entry_date <= end_date:
+                                summary = entry.summary if hasattr(entry, 'summary') else ""
+                                clean_summary = re.sub(r'<[^>]+>', '', summary)
+                                all_text_for_analysis += entry.title + " " + clean_summary + " "
+                                
+                                articles.append({
+                                    "日付": entry_date,
+                                    "メディア": entry.source.title if hasattr(entry, 'source') else "不明",
+                                    "タイトル": entry.title,
+                                    "リンク": entry.link
+                                })
+                                
                 status.update(label="✅ 分析完了", state="complete", expanded=False)
 
             if articles:
                 df = pd.DataFrame(articles).sort_values("日付", ascending=False)
                 df.insert(0, 'No', range(1, len(df) + 1))
                 
-                # ストップワード
+                # ストップワード（変更禁止の指示通り、そのまま保持しています）
                 stop_words = [
                     "の", "に", "は", "た", "を", "で", "と", "が", "も", "な", "し", "て", "した", "ある", "いう", "から", "など", "ニュース", "記事",
                     "yahoo", "ヤフー", "西日本新聞", "me", "ポータル", "web", "配信", "発表", "掲載", "提供", "公式", "サイト",
@@ -163,6 +172,7 @@ if check_password():
                 m2.metric("最多掲載メディア", df["メディア"].value_counts().idxmax())
                 m3.metric("最頻出ワード", top_word)
                 st.divider()
+                
                 tab1, tab2, tab3, tab4 = st.tabs(["📈 掲載トレンド", "🏢 メディアシェア", "🔍 キーワード分析", "📑 詳細データ"])
                 with tab1:
                     st.subheader("日別掲載数の推移")
@@ -183,6 +193,6 @@ if check_password():
                     csv = df.to_csv(index=False).encode('utf-8-sig')
                     st.download_button("📥 CSVダウンロード", data=csv, file_name=f"Report_{keyword}.csv", mime="text/csv")
             else:
-                st.warning("ニュースが見つかりませんでした。")
+                st.warning("指定した期間・キーワードに一致するニュースが見つかりませんでした。")
         else:
             st.warning("分析期間を正しく選択してください。")
