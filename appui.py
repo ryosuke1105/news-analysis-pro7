@@ -87,6 +87,9 @@ if check_password():
         st.write("") 
         st.link_button("📋 開発へのフィードバックを送る", feedback_url, use_container_width=True)
 
+        # --- 【追加】カレンダーが綺麗に開くように、サイドバーの下部に余白を作る ---
+        st.markdown("<br><br><br><br><br><br><br><br>", unsafe_allow_html=True)
+
     st.title("📰 News Intelligence Dashboard")
     st.caption(f"対象: **{keyword}** | 期間: {date_range[0]} 〜 {date_range[1]}")
 
