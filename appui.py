@@ -53,7 +53,7 @@ def check_password():
     if "failed_attempts" not in st.session_state:
         st.session_state["failed_attempts"] = 0
     if st.session_state["failed_attempts"] >= 3:
-        st.error("🚨 セキュリティロック: パスワードを複数回間違えたため、アクセスが遮断されました。管理者に連絡してください。")
+        st.error("🚨 セキュリティロック: 管理者に連絡してください。")
         return False
     if "password_correct" not in st.session_state:
         st.markdown("### 🔐 システムアクセス")
@@ -76,33 +76,36 @@ def check_password():
 if check_password():
     with st.sidebar:
         st.title("⚙️ 検索・分析設定")
-        
-        # 【変更ポイント】カレンダーが上に開いても切れないように、他の項目を先に配置します
-        st.info("💡 **分析プロトコル**\n・ノイズ除去：フル稼働中")
+        st.info("💡 **分析プロトコル**\n・ノイズ除去：有効\n・時差補正：JST適用済")
         keyword = st.text_input("検索キーワード", "北九州 ニュース")
         max_results = st.slider("最大取得件数", 10, 100, 50)
         
-        st.markdown("<br>", unsafe_allow_html=True) # 少し余白を入れて見やすくします
+        st.markdown("<br>", unsafe_allow_html=True)
         
-        # カレンダーをサイドバーの中段に配置
+        # カレンダー入力
         today = datetime.date.today()
-        date_range = st.date_input("分析期間", value=(today - datetime.timedelta(days=7), today), max_value=today)
+        # 日付選択のバリデーションを考慮
+        date_val = st.date_input("分析期間", value=(today - datetime.timedelta(days=7), today), max_value=today)
         
+        # start_date, end_dateを安全に取得
+        if isinstance(date_val, tuple) and len(date_val) == 2:
+            start_date, end_date = date_val
+        elif isinstance(date_val, (list, tuple)) and len(date_val) == 1:
+            start_date = end_date = date_val[0]
+        else:
+            start_date = end_date = date_val
+
         st.divider()
         start_button = st.button("🚀 分析を開始する")
         feedback_url = "https://docs.google.com/forms/d/e/1FAIpQLSc43_pvBP5SgbHIvLe-v0os4toA04Gd9od0IR5D5w8t--Z55w/viewform?usp=publish-editor"
-        st.write("") 
         st.link_button("📋 開発へのフィードバックを送る", feedback_url, use_container_width=True)
-
-        # 念のため下部の余白も残しておきます
         st.markdown('<div style="height: 150px;"></div>', unsafe_allow_html=True)
 
     st.title("📰 News Intelligence Dashboard")
-    st.caption(f"対象: **{keyword}** | 期間: {date_range[0]} 〜 {date_range[1]}")
+    st.caption(f"対象: **{keyword}** | 期間: {start_date} 〜 {end_date}")
 
     if start_button:
-        if isinstance(date_range, tuple) and len(date_range) == 2:
-            start_date, end_date = date_range
+        if start_date and end_date:
             with st.status("🔍 データを収集中...", expanded=True) as status:
                 st.write("Google News RSSから情報を抽出中...")
                 
@@ -110,22 +113,29 @@ if check_password():
                 exclude_domain = "city.kitakyushu.lg.jp"
                 query = f"{search_query}+-site:{exclude_domain}+-site:instagram.com"
                 
+                # beforeの日付は翌日に設定して当日分をカバー
                 date_query = f"after:{start_date}+before:{end_date + datetime.timedelta(days=1)}"
-                url = f"https://news.google.com/rss/search?q={query}+{date_query}&hl=ja&gl=JP&ceid=JP:ja&num={max_results}"
+                # Google News側へのリクエストURL (numパラメータで取得数を最大化)
+                url = f"https://news.google.com/rss/search?q={query}+{date_query}&hl=ja&gl=JP&ceid=JP:ja"
+                
                 feed = feedparser.parse(url)
                 
                 st.write("高純度フィルタリングを実行中...")
                 articles = []
                 all_text_for_analysis = ""
-
                 target_words = keyword.replace("　", " ").split()
 
-                for entry in feed.entries[:max_results]:
+                # フィードを一件ずつ検証
+                for entry in feed.entries:
+                    # キーワードの一致確認
                     if all(word.lower() in entry.title.lower() for word in target_words):
                         if hasattr(entry, 'published_parsed') and entry.published_parsed:
-                            dt = datetime.datetime(*entry.published_parsed[:6])
-                            entry_date = dt.date()
+                            # --- 【重要】UTCをJST（+9時間）に補正 ---
+                            dt_utc = datetime.datetime(*entry.published_parsed[:6])
+                            dt_jst = dt_utc + datetime.timedelta(hours=9)
+                            entry_date = dt_jst.date()
                             
+                            # 日付範囲の再確認
                             if start_date <= entry_date <= end_date:
                                 summary = entry.summary if hasattr(entry, 'summary') else ""
                                 clean_summary = re.sub(r'<[^>]+>', '', summary)
@@ -137,6 +147,10 @@ if check_password():
                                     "タイトル": entry.title,
                                     "リンク": entry.link
                                 })
+                    
+                    # 指定された最大件数に達したらループを抜ける
+                    if len(articles) >= max_results:
+                        break
                                 
                 status.update(label="✅ 分析完了", state="complete", expanded=False)
 
@@ -144,6 +158,7 @@ if check_password():
                 df = pd.DataFrame(articles).sort_values("日付", ascending=False)
                 df.insert(0, 'No', range(1, len(df) + 1))
                 
+                # ストップワード設定
                 stop_words = [
                     "の", "に", "は", "た", "を", "で", "と", "が", "も", "な", "し", "て", "した", "ある", "いう", "から", "など", "ニュース", "記事",
                     "yahoo", "ヤフー", "西日本新聞", "me", "ポータル", "web", "配信", "発表", "掲載", "提供", "公式", "サイト",
